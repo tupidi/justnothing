@@ -1,53 +1,9 @@
-# -*- coding: utf-8 -*-
-
-
-
-
-!pip install torch torchvision
-
 
 from google.colab import drive
 drive.mount('/content/drive')
 
 import os
 os.chdir("/content/drive/MyDrive/")
-
-!unzip office31.zip
-
-import os
-import random
-
-# Define your source directory
-src_dir = '/content/drive/MyDrive/experiments/cartoonV2'
-
-# List the classes in the source directory
-classes = [d for d in os.listdir(src_dir) if os.path.isdir(os.path.join(src_dir, d))]
-
-# Loop through each class
-for cls in classes:
-    class_dir = os.path.join(src_dir, cls)
-
-    # List all files in the class directory
-    files = [f for f in os.listdir(class_dir) if os.path.isfile(os.path.join(class_dir, f))]
-
-    # Calculate the number of files to remove
-    num_to_remove = len(files) // 3
-
-    # Randomly choose files to remove
-    files_to_remove = random.sample(files, num_to_remove)
-
-    # Remove the chosen files
-    for file in files_to_remove:
-        os.remove(os.path.join(class_dir, file))
-
-    print(f'Removed {num_to_remove} files from {cls} class')
-
-"""To verify the dataset, we show its structures."""
-
-!apt install tree
-!tree experiments -d 1
-
-"""## Some imports."""
 
 import os
 import torch
@@ -57,16 +13,12 @@ import torch.nn as nn
 import time
 from torchvision import models
 
-"""Set the dataset folder, batch size, number of classes, and domain name."""
 
 data_folder = 'experiments'
 batch_size = 16
 n_class = 5
 domain_src, domain_tar = 'cartoonV2', 'coralV2'
 
-"""## Data load
-Now, define a data loader function.
-"""
 
 def load_data(root_path, domain, batch_size, phase):
     transform_dict = {
@@ -87,60 +39,12 @@ def load_data(root_path, domain, batch_size, phase):
     data_loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=phase=='src', drop_last=phase=='tar', num_workers=4)
     return data_loader
 
-"""Load the data using the above function to test it."""
 
 src_loader = load_data(data_folder, domain_src, batch_size, phase='src')
 tar_loader = load_data(data_folder, domain_tar, batch_size, phase='tar')
 print(f'Source data number: {len(src_loader.dataset)}')
 print(f'Target data number: {len(tar_loader.dataset)}')
 
-"""## Define the finetune model
-The model for finetune is based on ResNet-50 for its popularity. Of course you can use other base networks.
-The main logic of this class is to get the pretrained ResNet-50, use all of its layers but the last one, which we will replace by a new FC layer for classification. Since the original ResNet-50 is for 1000 classes classification, we only need it to classify 31.
-"""
-
-class TransferModel(nn.Module):
-    def __init__(self,
-                base_model : str = 'resnet50',
-                pretrain : bool = True,
-                n_class : int = 31):
-        super(TransferModel, self).__init__()
-        self.base_model = base_model
-        self.pretrain = pretrain
-        self.n_class = n_class
-        if self.base_model == 'resnet50':
-            self.model = torchvision.models.resnet50(pretrained=True)
-            n_features = self.model.fc.in_features
-            fc = torch.nn.Linear(n_features, n_class)
-            self.model.fc = fc
-        else:
-            # Use other models you like, such as vgg or alexnet
-            pass
-        self.model.fc.weight.data.normal_(0, 0.005)
-        self.model.fc.bias.data.fill_(0.1)
-
-    def forward(self, x):
-        return self.model(x)
-
-    def predict(self, x):
-        return self.forward(x)
-
-"""Now, we define a model and test it using a random tensor."""
-
-model = TransferModel().cuda()
-RAND_TENSOR = torch.randn(1, 3, 224, 224).cuda()
-output = model(RAND_TENSOR)
-print(output)
-print(output.shape)
-
-"""## Finetune ResNet-50
-Define some variables. Note that Office-31 doesn't have a validation set, so we use its target domain as the validation set.
-
-Now the most important part: write the finetune function.
-This function is pretty easy: it is basically a standard classification function. We train it on the 'src' domain, valid it on the 'val' domain, and then test it on the 'tar' domain.
-The only difference is that Office-31 dataset has no validation set, so we will use the target domain as the validation set. For your own data, you should use its standard validation set.
-We also set an early_stop variable.
-"""
 
 dataloaders = {'src': src_loader,
                'val': tar_loader,
@@ -149,82 +53,9 @@ n_epoch = 50
 criterion = nn.CrossEntropyLoss()
 early_stop = 20
 
-def finetune(model, dataloaders, optimizer):
-    since = time.time()
-    best_acc = 0
-    stop = 0
-    for epoch in range(0, n_epoch):
-        stop += 1
-        # You can uncomment this line for scheduling learning rate
-        # lr_schedule(optimizer, epoch)
-        for phase in ['src', 'val', 'tar']:
-            if phase == 'src':
-                model.train()
-            else:
-                model.eval()
-            total_loss, correct = 0, 0
-            for inputs, labels in dataloaders[phase]:
-                inputs, labels = inputs.cuda(), labels.cuda()
-                optimizer.zero_grad()
-                with torch.set_grad_enabled(phase == 'src'):
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                preds = torch.max(outputs, 1)[1]
-                if phase == 'src':
-                    loss.backward()
-                    optimizer.step()
-                total_loss += loss.item() * inputs.size(0)
-                correct += torch.sum(preds == labels.data)
-            epoch_loss = total_loss / len(dataloaders[phase].dataset)
-            epoch_acc = correct.double() / len(dataloaders[phase].dataset)
-            print(f'Epoch: [{epoch:02d}/{n_epoch:02d}]---{phase}, loss: {epoch_loss:.6f}, acc: {epoch_acc:.4f}')
-            if phase == 'val' and epoch_acc > best_acc:
-                stop = 0
-                best_acc = epoch_acc
-                torch.save(model.state_dict(), 'model.pkl')
-        if stop >= early_stop:
-            break
-        print()
 
-    time_pass = time.time() - since
-    print(f'Training complete in {time_pass // 60:.0f}m {time_pass % 60:.0f}s')
 
-"""Now, define some train parameters and the optimizer. For simplicity, we use SGD, and the learning rate for the FC layer is 10 times of other layers, which is a common trick."""
-
-param_group = []
-learning_rate = 0.0001
-momentum = 5e-4
-for k, v in model.named_parameters():
-    if not k.__contains__('fc'):
-        param_group += [{'params': v, 'lr': learning_rate}]
-    else:
-        param_group += [{'params': v, 'lr': learning_rate * 10}]
-optimizer = torch.optim.SGD(param_group, momentum=momentum)
-
-"""## Train and test
-Now we can train and test it.
 """
-
-finetune(model, dataloaders, optimizer)
-
-def test(model, target_test_loader):
-    model.eval()
-    correct = 0
-    len_target_dataset = len(target_test_loader.dataset)
-    with torch.no_grad():
-        for data, target in target_test_loader:
-            data, target = data.cuda(), target.cuda()
-            s_output = model.predict(data)
-            pred = torch.max(s_output, 1)[1]
-            correct += torch.sum(pred == target)
-    acc = correct.double() / len(target_test_loader.dataset)
-    return acc
-
-model.load_state_dict(torch.load('model.pkl'))
-acc_test = test(model, dataloaders['tar'])
-print(f'Test accuracy: {acc_test}')
-
-"""It's over for finetune. Of course, you should use some learning rate decay trick in real training. But that is not our goal.
 Next, we will continue to use the same dataloader for domain adaptation.
 
 ## Domain adaptation
@@ -238,7 +69,7 @@ Therefore, the most different parts are:
 - Write a slightly different script to train, since we have to take both **source data, source label, and target data**.
 
 ### Loss function
-The most popular loss function for DA is **MMD (Maximum Mean Discrepancy)**. For comaprison, we also use another popular loss **CORAL (CORrelation ALignment)**. They are defined as follows.
+The most popular loss function for DA is **MMD (Maximum Mean Discrepancy)**.
 
 #### MMD loss
 """
@@ -290,25 +121,6 @@ class MMD_loss(nn.Module):
             loss = torch.mean(XX + YY - XY - YX)
             return loss
 
-"""#### CORAL loss"""
-
-def CORAL(source, target):
-    d = source.size(1)
-    ns, nt = source.size(0), target.size(0)
-
-    # source covariance
-    tmp_s = torch.ones((1, ns)).cuda() @ source
-    cs = (source.t() @ source - (tmp_s.t() @ tmp_s) / ns) / (ns - 1)
-
-    # target covariance
-    tmp_t = torch.ones((1, nt)).cuda() @ target
-    ct = (target.t() @ target - (tmp_t.t() @ tmp_t) / nt) / (nt - 1)
-
-    # frobenius norm
-    loss = (cs - ct).pow(2).sum().sqrt()
-    loss = loss / (4 * d * d)
-
-    return loss
 
 """### Model
 Now we use ResNet-50 again just like finetune. The difference is that we rewrite the ResNet-50 class to drop its last layer.
@@ -395,29 +207,16 @@ class TransferNet(nn.Module):
         return clf
 
     def adapt_loss(self, X, Y, adapt_loss):
-        """Compute adaptation loss, currently we support mmd and coral
-
-        Arguments:
-            X {tensor} -- source matrix
-            Y {tensor} -- target matrix
-            adapt_loss {string} -- loss type, 'mmd' or 'coral'. You can add your own loss
-
-        Returns:
-            [tensor] -- adaptation loss tensor
-        """
+       
         if adapt_loss == 'mmd':
             mmd_loss = MMD_loss()
             loss = mmd_loss(X, Y)
-        elif adapt_loss == 'coral':
-            loss = CORAL(X, Y)
+        
         else:
             # Your own loss
             loss = 0
         return loss
 
-"""### Train
-Now the train part.
-"""
 
 transfer_loss = 'mmd'
 learning_rate = 0.0001
@@ -428,8 +227,6 @@ optimizer = torch.optim.SGD([
     {'params': transfer_model.classifier_layer.parameters(), 'lr': 10 * learning_rate},
 ], lr=learning_rate, momentum=0.9, weight_decay=5e-4)
 lamb = 10 # weight for transfer loss, it is a hyperparameter that needs to be tuned
-
-"""The main train function. Since we have to enumerate all source and target samples, we have to use `zip` operation to enumerate each pair of these two domains. It is common that two domains have different sizes, but we think by randomly sampling them in many epochs, we may sample each one of them."""
 
 def train(dataloaders, model, optimizer):
     source_loader, target_train_loader, target_test_loader = dataloaders['src'], dataloaders['val'], dataloaders['tar']
@@ -468,12 +265,7 @@ def train(dataloaders, model, optimizer):
 
 train(dataloaders, transfer_model, optimizer)
 
-transfer_model.load_state_dict(torch.load('trans_model.pkl'))
+
 acc_test = test(transfer_model, dataloaders['tar'])
 print(f'Test accuracy: {acc_test}')
 
-"""Now we are done.
-
-You see, we don't even need to install a library or package to train a domain adaptation or finetune model.
-In your own work, you can also use this notebook to test your own algorithms.
-"""
