@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM JSON Output Interface</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        html, body {
+            height: 100%;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+
+        .container {
+            display: grid;
+            grid-template-rows: 1fr 1fr;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .input-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: #1E1E1E;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4A90E2;
+        }
+
+        textarea {
+            width: 100%;
+            flex-grow: 1;
+            resize: none;
+            background-color: #2C2C2C;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            outline: none;
+            font-size: 14px;
+            line-height: 1.5;
+            spellcheck: false;
+        }
+
+        textarea:focus {
+            border-color: #4A90E2;
+        }
+
+        .output-container {
+            background-color: #1E1E1E;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .json-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .json-table th, .json-table td {
+            border: 1px solid #444;
+            padding: 10px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        .json-table th {
+            background-color: #2C2C2C;
+            color: #4A90E2;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            font-weight: bold;
+        }
+
+        .btn-generate {
+            background-color: #4A90E2;
+            color: white;
+        }
+
+        .btn-generate:hover {
+            background-color: #357ABD;
+        }
+
+        .btn-clear {
+            background-color: #444;
+            color: #e0e0e0;
+        }
+
+        .btn-clear:hover {
+            background-color: #555;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-container">
+            <div class="card">
+                <div class="card-header">System Prompt</div>
+                <textarea id="systemPrompt" placeholder="Enter system prompt..." spellcheck="false">You are a helpful AI assistant that returns JSON output.</textarea>
+            </div>
+            <div class="card">
+                <div class="card-header">User Prompt</div>
+                <textarea id="userPrompt" placeholder="Enter user prompt..." spellcheck="false"></textarea>
+            </div>
+        </div>
+        
+        <div class="output-container">
+            <div class="card-header">Generated JSON Output</div>
+            <div id="jsonOutput"></div>
+        </div>
+    </div>
+
+    <div class="button-group">
+        <button id="generateBtn" class="btn btn-generate">Generate</button>
+        <button id="clearBtn" class="btn btn-clear">Clear All</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const systemPromptEl = document.getElementById('systemPrompt');
+            const userPromptEl = document.getElementById('userPrompt');
+            const jsonOutputEl = document.getElementById('jsonOutput');
+            const generateBtn = document.getElementById('generateBtn');
+            const clearBtn = document.getElementById('clearBtn');
+
+            // Function to render JSON as a column-wise table
+            function renderJsonTable(jsonData) {
+                if (!jsonData || typeof jsonData !== 'object') {
+                    jsonOutputEl.innerHTML = '<p>Invalid JSON</p>';
+                    return;
+                }
+
+                const table = document.createElement('table');
+                table.className = 'json-table';
+
+                // Create columns for keys and values
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                
+                const keyHeader = document.createElement('th');
+                keyHeader.textContent = 'Key';
+                const valueHeader = document.createElement('th');
+                valueHeader.textContent = 'Value';
+                
+                headerRow.appendChild(keyHeader);
+                headerRow.appendChild(valueHeader);
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+
+                // Create body rows
+                const tbody = document.createElement('tbody');
+                Object.entries(jsonData).forEach(([key, value]) => {
+                    const row = document.createElement('tr');
+                    
+                    const keyCell = document.createElement('td');
+                    keyCell.textContent = key;
+                    
+                    const valueCell = document.createElement('td');
+                    // Handle different types of values
+                    if (typeof value === 'object') {
+                        valueCell.textContent = JSON.stringify(value, null, 2);
+                    } else {
+                        valueCell.textContent = String(value);
+                    }
+                    
+                    row.appendChild(keyCell);
+                    row.appendChild(valueCell);
+                    tbody.appendChild(row);
+                });
+
+                table.appendChild(tbody);
+                jsonOutputEl.innerHTML = '';
+                jsonOutputEl.appendChild(table);
+            }
+
+            // Simulate API call (replace with actual API integration)
+            async function generateOutput() {
+                generateBtn.disabled = true;
+                jsonOutputEl.innerHTML = '<p>Generating...</p>';
+
+                try {
+                    // Replace this with your actual API call
+                    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer '
+                        },
+                        body: JSON.stringify({
+                            model: "gpt-3.5-turbo",
+                            messages: [
+                                {"role": "system", "content": systemPromptEl.value},
+                                {"role": "user", "content": userPromptEl.value}
+                            ],
+                            response_format: { "type": "json_object" },
+                            temperature: 0
+                        })
+                    });
+
+                    const data = await response.json();
+                    const jsonResponse = JSON.parse(data.choices[0].message.content);
+                    renderJsonTable(jsonResponse);
+                } catch (error) {
+                    jsonOutputEl.innerHTML = `<p>Error: ${error.message}</p>`;
+                } finally {
+                    generateBtn.disabled = false;
+                }
+            }
+
+            // Clear all fields
+            function clearFields() {
+                systemPromptEl.value = 'You are a helpful AI assistant that returns JSON output.';
+                userPromptEl.value = '';
+                jsonOutputEl.innerHTML = '';
+            }
+
+            // Event Listeners
+            generateBtn.addEventListener('click', generateOutput);
+            clearBtn.addEventListener('click', clearFields);
+        });
+    </script>
+</body>
+</html>
