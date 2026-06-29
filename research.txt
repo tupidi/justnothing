@@ -1,0 +1,8 @@
+( live human talking capabilities )
+Beyond presence
+hedra
+https://github.com/duixcom/Duix-Avatar
+https://github.com/spar-app/spar-services ( unreal engine avatars )
+https://github.com/Kedreamix/Linly-Talker
+https://github.com/TMElyralab/MuseTalk lipsync one ( but mentioned virtual human avatar )
+https://github.com/bytedance/LatentSync ( lipsync one )
